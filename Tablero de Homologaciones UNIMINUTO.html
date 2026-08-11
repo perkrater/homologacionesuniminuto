@@ -23,6 +23,11 @@ nav.tabs{display:flex;gap:2px;background:var(--azul2);padding:0 28px}
 nav.tabs button{background:none;border:0;color:#fff;opacity:.72;padding:11px 18px;font-size:13.5px;cursor:pointer;border-bottom:3px solid transparent}
 nav.tabs button.on{opacity:1;border-bottom-color:var(--crema);font-weight:600}
 .wrap{padding:20px 28px 60px;max-width:1500px;margin:0 auto}
+.globalbar{background:#fff;border-bottom:1px solid var(--borde);padding:10px 28px;display:flex;
+           gap:10px;align-items:center;position:sticky;top:0;z-index:5;box-shadow:0 1px 2px rgba(20,30,60,.06)}
+.globalbar label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--suave);font-weight:700}
+.globalbar select{padding:7px 11px;border:1px solid var(--borde);border-radius:7px;font-size:13px;background:#fff}
+.globalbar span{font-size:12px;color:var(--suave)}
 .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
 .bar input,.bar select{padding:8px 11px;border:1px solid var(--borde);border-radius:7px;font-size:13px;background:#fff;color:var(--texto)}
 .bar input{min-width:260px}
@@ -89,11 +94,15 @@ tbody tr:hover{background:#f3f7ff}
   <button data-v="asig">Asignaturas más homologadas</button>
 </nav>
 
+<div class="globalbar">
+  <label>Institución de origen</label>
+  <select id="fInstG"></select>
+  <span id="avisoInst"></span>
+</div>
 <div class="wrap">
   <div id="v-rutas">
     <div class="bar">
       <input id="q" placeholder="Buscar programa, institución o asignatura…">
-      <select id="fInst"></select>
       <select id="fCar"></select>
       <select id="fOrden">
         <option value="hom">Ordenar: más créditos homologados</option>
@@ -140,6 +149,7 @@ D.forEach((d,i)=>{ d.i=i; d.pct=pct(d); d.fam=fam(d.institucion);
 /* ---------- KPIs ---------- */
 const insts=[...new Set(D.map(d=>d.institucion))], cars=[...new Set(D.map(d=>d.carrera))].sort();
 const progs=[...new Set(D.map(d=>d.institucion+'|'+d.programa))];
+$('#avisoInst').textContent='Mostrando las '+D.length+' rutas de todas las instituciones.';
 $('#kpis').innerHTML = [
   [D.length,'rutas de homologación'], [insts.length,'instituciones de origen'],
   [progs.length,'programas de origen'], [cars.length,'programas UNIMINUTO'],
@@ -149,13 +159,15 @@ $('#kpis').innerHTML = [
 /* ---------- filtros ---------- */
 function llenar(sel, arr, todos){ sel.innerHTML = `<option value="">${todos}</option>` +
   arr.map(v=>`<option>${esc(v)}</option>`).join(''); }
-llenar($('#fInst'), insts.sort(), 'Todas las instituciones');
+llenar($('#fInstG'), insts.sort(), 'Todas las instituciones');
 llenar($('#fCar'),  cars, 'Todos los programas UNIMINUTO');
 llenar($('#fCar2'), cars, 'Todos los programas UNIMINUTO');
 
 let orden='hom';
+const inst = () => $('#fInstG').value;
+const universo = () => { const fi=inst(); return fi ? D.filter(d=>d.institucion===fi) : D; };
 function filtradas(){
-  const q=$('#q').value.trim().toUpperCase(), fi=$('#fInst').value, fc=$('#fCar').value;
+  const q=$('#q').value.trim().toUpperCase(), fi=inst(), fc=$('#fCar').value;
   let r = D.filter(d => (!fi||d.institucion===fi) && (!fc||d.carrera===fc) && (!q||d.buscar.includes(q)));
   const cmp = {hom:(a,b)=>b.homologados-a.homologados, pct:(a,b)=>b.pct-a.pct,
     prog:(a,b)=>a.programa.localeCompare(b.programa), car:(a,b)=>a.carrera.localeCompare(b.carrera)||b.homologados-a.homologados};
@@ -174,7 +186,13 @@ function pintarTabla(){
     <td><div class="prog"><i style="width:${d.pct}%"></i><span>${d.pct}%</span></div></td>
   </tr>`).join('') : '<tr><td colspan="7" class="vacio">Sin resultados para el filtro actual.</td></tr>';
 }
-['#q','#fInst','#fCar'].forEach(s=>$(s).addEventListener('input',pintarTabla));
+['#q','#fCar'].forEach(s=>$(s).addEventListener('input',pintarTabla));
+$('#fInstG').addEventListener('change',()=>{
+  const fi=inst();
+  $('#avisoInst').textContent = fi ? 'Mostrando únicamente las rutas de ' + fi + ' en todas las vistas.'
+                                   : 'Mostrando las ' + D.length + ' rutas de todas las instituciones.';
+  pintarTabla(); pintarMatriz(); pintarAsig();
+});
 $('#fOrden').addEventListener('change',e=>{orden=e.target.value;pintarTabla();});
 
 /* ---------- detalle ---------- */
@@ -211,11 +229,12 @@ window.verDetalle = function(i){
 /* ---------- matriz ---------- */
 function pintarMatriz(){
   let h='';
-  insts.forEach(inst=>{
-    const r=D.filter(d=>d.institucion===inst);
+  const lista = inst() ? [inst()] : insts;
+  lista.forEach(nombreInst=>{
+    const r=D.filter(d=>d.institucion===nombreInst);
     const porPrograma={};
     r.forEach(d=>{ (porPrograma[d.programa]=porPrograma[d.programa]||{})[d.carrera]=d; });
-    h+=`<div class="card"><h3>${esc(inst)} — ${Object.keys(porPrograma).length} programas · ${r.length} rutas</h3>
+    h+=`<div class="card"><h3>${esc(nombreInst)} — ${Object.keys(porPrograma).length} programas · ${r.length} rutas</h3>
       <table class="matriz"><thead><tr><th>Programa de origen</th>${cars.map(c=>`<th class="c">${esc(c)}</th>`).join('')}</tr></thead><tbody>`;
     Object.keys(porPrograma).sort().forEach(p=>{
       h+=`<tr style="cursor:default"><td>${esc(p)}</td>`+cars.map(c=>{
@@ -234,7 +253,7 @@ function pintarMatriz(){
 function pintarAsig(){
   const fc=$('#fCar2').value;
   const porCar={};
-  D.filter(d=>!fc||d.carrera===fc).forEach(d=>{
+  universo().filter(d=>!fc||d.carrera===fc).forEach(d=>{
     const m=porCar[d.carrera]=porCar[d.carrera]||{};
     d.competencias.forEach(c=>c.asignaturas.forEach(a=>{
       const k=a.nombre.trim();
